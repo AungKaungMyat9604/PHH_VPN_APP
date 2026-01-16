@@ -1,0 +1,9 @@
+# VPN App Requirements
+# Note: This app uses built-in Python libraries (tkinter, subprocess, etc.)
+# No external dependencies required for basic functionality
+
+# Optional: For Windows registry operations (already built into Python)
+# pywin32  # Only needed if you want explicit Windows registry access, but winreg is built-in
+
+# Optional: For .env file support (if you want to use python-dotenv)
+python-dotenv>=1.0.0
