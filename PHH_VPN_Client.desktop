@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=PHH VPN Client
+Comment=Cross-platform VPN/Proxy client application
+Exec=bash -c 'cd "%k" && ./PHH_VPN_Client.sh'
+Icon=applications-internet
+Terminal=true
+Categories=Network;Internet;
+StartupNotify=true
+Path=%k

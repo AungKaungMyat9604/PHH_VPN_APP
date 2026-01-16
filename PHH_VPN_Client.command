@@ -1,5 +1,22 @@
 #!/bin/bash
-# Run script that activates venv and runs the app (Linux/macOS)
+# Double-clickable launcher for PHH VPN Client (macOS)
+# This file can be double-clicked to run the app
+
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$SCRIPT_DIR"
+
+# Check if virtual environment exists
+if [ ! -d "venv" ]; then
+    echo "Virtual environment not found!"
+    echo "Setting up virtual environment..."
+    ./setup_venv.sh
+    if [ $? -ne 0 ]; then
+        echo "Press any key to exit..."
+        read -n 1
+        exit 1
+    fi
+fi
 
 # Function to find the best Python executable
 find_python() {
@@ -50,56 +67,42 @@ find_python() {
 PYTHON_CMD=$(find_python)
 if [ $? -ne 0 ]; then
     echo "Error: Python 3 is not installed"
+    echo "Press any key to exit..."
+    read -n 1
     exit 1
-fi
-
-echo "Using Python: $PYTHON_CMD"
-
-# Check if virtual environment exists
-if [ ! -d "venv" ]; then
-    echo "Virtual environment not found!"
-    echo "Setting up virtual environment..."
-    ./setup_venv.sh
-    if [ $? -ne 0 ]; then
-        exit 1
-    fi
 fi
 
 # Activate virtual environment
 source venv/bin/activate
 
 # Check if tkinter is available and works
-echo "Checking Tkinter..."
 if ! "$PYTHON_CMD" -c "import tkinter; tk = tkinter.Tk(); tk.destroy()" 2>/dev/null; then
     echo ""
     echo "❌ Error: Tkinter is not working properly"
     echo ""
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        echo "On macOS, the system Python from CommandLineTools has broken Tkinter."
-        echo ""
-        echo "Solution: Install Python via Homebrew:"
-        echo "  brew install python@3.12"
-        echo ""
-        echo "Or if you already have Homebrew Python, recreate the venv:"
-        echo "  rm -rf venv"
-        echo "  ./setup_venv.sh"
-        echo ""
-        echo "Then run this script again."
-    else
-        echo "Please install it using:"
-        echo "  Ubuntu/Debian: sudo apt-get install python3-tk"
-        echo "  CentOS/RHEL: sudo yum install python3-tkinter"
-        echo "  Arch Linux: sudo pacman -S tk"
-    fi
+    echo "On macOS, the system Python from CommandLineTools has broken Tkinter."
+    echo ""
+    echo "Solution: Run the fix script:"
+    echo "  ./fix_macos_tkinter.sh"
+    echo ""
+    echo "Or install Python via Homebrew:"
+    echo "  brew install python@3.12"
+    echo ""
     deactivate
+    echo "Press any key to exit..."
+    read -n 1
     exit 1
 fi
-
-echo "✓ Tkinter is working"
-echo ""
 
 # Run the application
 "$PYTHON_CMD" vpn_app.py
 
 # Deactivate when done
 deactivate
+
+# Keep terminal open if there was an error
+if [ $? -ne 0 ]; then
+    echo ""
+    echo "Press any key to exit..."
+    read -n 1
+fi

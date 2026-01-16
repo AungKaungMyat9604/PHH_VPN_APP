@@ -6,16 +6,15 @@ A cross-platform VPN/Proxy client application that allows you to connect through
 
 - ✅ Cross-platform support (Linux, Windows, macOS)
 - ✅ Simple and intuitive GUI
+- ✅ Multiple proxy types: HTTP/HTTPS, SOCKS4, SOCKS5
 - ✅ Environment variable configuration
 - ✅ Manual proxy IP/Port input
-- ✅ Multiple proxy types: HTTP/HTTPS, SOCKS4, SOCKS5
 - ✅ Connection testing feature
-- ✅ **System-wide VPN setup** - Configures proxy for all applications including terminal
-- ✅ **Proxychains integration** - Terminal apps can use proxy via proxychains
-- ✅ **Shell config export** - Automatically exports proxy settings to .bashrc/.zshrc
-- ✅ **NetworkManager integration** - System-wide proxy via NetworkManager
-- ✅ Real-time connection status
-- ✅ Activity logging
+- ✅ System-wide VPN setup (configures proxy for all applications including terminal)
+- ✅ Proxychains integration (terminal apps can use proxy via proxychains)
+- ✅ Shell config export (automatically exports proxy settings to .bashrc/.zshrc)
+- ✅ NetworkManager integration (system-wide proxy via NetworkManager)
+- ✅ Real-time connection status and activity logging
 - ✅ Automatic proxy configuration for your operating system
 - ✅ Environment variables set for all applications (curl, wget, git, etc.)
 
@@ -25,39 +24,24 @@ A cross-platform VPN/Proxy client application that allows you to connect through
 - tkinter (usually comes with Python, but may need to be installed separately on Linux)
 - python3-venv (for virtual environment setup on Linux)
 
-### Optional (for system-wide VPN on Linux):
-- proxychains4 (for terminal applications): `sudo apt-get install proxychains4`
+### Optional (for system-wide VPN on Linux)
+
+- proxychains4: `sudo apt-get install proxychains4`
 - NetworkManager (usually pre-installed on most Linux distributions)
-
-## Virtual Environment
-
-This project includes virtual environment support to keep dependencies isolated. The virtual environment is automatically created and managed by the setup scripts.
-
-**Benefits:**
-- Isolated Python environment
-- No conflicts with system Python packages
-- Easy to clean up (just delete the `venv/` folder)
-- Reproducible setup across different systems
 
 ## Installation
 
-### Quick Start with Virtual Environment (Recommended)
+### Quick Start (Recommended)
 
 **Linux/macOS:**
 ```bash
-# Setup virtual environment and install dependencies
 ./setup_venv.sh
-
-# Run the app (automatically activates venv)
 ./run.sh
 ```
 
 **Windows:**
 ```cmd
-REM Setup virtual environment and install dependencies
 setup_venv.bat
-
-REM Run the app (automatically activates venv)
 run.bat
 ```
 
@@ -66,18 +50,14 @@ run.bat
 #### Linux
 
 ```bash
-# Install tkinter if not already installed
-sudo apt-get install python3-tk python3-venv  # Debian/Ubuntu
-# or
-sudo yum install python3-tkinter python3-venv  # CentOS/RHEL
-# or
-sudo pacman -S tk python-venv  # Arch Linux
+# Install tkinter (choose based on your distribution)
+sudo apt-get install python3-tk python3-venv    # Debian/Ubuntu
+sudo yum install python3-tkinter python3-venv   # CentOS/RHEL
+sudo pacman -S tk python-venv                 # Arch Linux
 
 # Create virtual environment
 python3 -m venv venv
 source venv/bin/activate
-
-# Install dependencies (optional)
 pip install -r requirements.txt
 ```
 
@@ -86,33 +66,32 @@ pip install -r requirements.txt
 Python comes with tkinter by default. If you don't have Python, download it from [python.org](https://www.python.org/downloads/).
 
 ```cmd
-REM Create virtual environment
 python -m venv venv
 venv\Scripts\activate.bat
-
-REM Install dependencies (optional)
 pip install -r requirements.txt
 ```
 
 #### macOS
 
-Python and tkinter should be pre-installed. If not, install Python using Homebrew:
+**Important:** The system Python from CommandLineTools has broken Tkinter. Use Homebrew Python instead:
+
 ```bash
-brew install python3
+# Install Python via Homebrew
+brew install python@3.12
 
-# Create virtual environment
-python3 -m venv venv
+# Create virtual environment using Homebrew Python
+/opt/homebrew/opt/python@3.12/bin/python3 -m venv venv
+# For Intel Mac: /usr/local/opt/python@3.12/bin/python3 -m venv venv
+
 source venv/bin/activate
-
-# Install dependencies (optional)
 pip install -r requirements.txt
 ```
+
+**Note:** The `setup_venv.sh` and `run.sh` scripts automatically detect and use Homebrew Python if available.
 
 ## Configuration
 
 ### Option 1: Environment Variables (Recommended)
-
-Set the following environment variables:
 
 **Linux/macOS:**
 ```bash
@@ -139,7 +118,7 @@ $env:PROXY_IP="your.proxy.ip.address"
 $env:PROXY_PORT="8080"
 ```
 
-**Windows (Permanent - System Properties):**
+**Windows (Permanent):**
 1. Open System Properties > Environment Variables
 2. Add new User variables:
    - Variable: `PROXY_IP`, Value: `your.proxy.ip.address`
@@ -148,79 +127,59 @@ $env:PROXY_PORT="8080"
 ### Option 2: Using .env File
 
 1. Copy `.env.example` to `.env`:
-```bash
-cp .env.example .env
-```
+   ```bash
+   cp .env.example .env
+   ```
 
 2. Edit `.env` and add your proxy settings:
-```
-PROXY_IP=your.proxy.ip.address
-PROXY_PORT=8080
-```
+   ```
+   PROXY_IP=your.proxy.ip.address
+   PROXY_PORT=8080
+   ```
 
-3. Install python-dotenv (optional):
-```bash
-pip install python-dotenv
-```
+3. Install python-dotenv:
+   ```bash
+   pip install python-dotenv
+   ```
 
-Note: The app will automatically load from environment variables. If you want to use `.env` file, you'll need to modify the app to use python-dotenv or load it manually.
+**Note:** The app automatically loads from environment variables. To use `.env` file, you'll need to modify the app to use python-dotenv or load it manually.
 
 ### Option 3: Manual Entry
 
-You can also enter the proxy IP and port directly in the application GUI.
+Enter the proxy IP and port directly in the application GUI.
 
 ## Usage
 
 ### Running the Application
 
-**Option 1: Using the run scripts (Recommended - automatically handles venv):**
+**Option 1: Double-Click Launchers (Easiest - No Command Line Needed!)**
 
-**Linux/macOS:**
+- **macOS:** Double-click `PHH VPN Client.app` or `PHH_VPN_Client.command`
+- **Windows:** Double-click `PHH_VPN_Client.bat` (console) or `PHH_VPN_Client.vbs` (no console)
+- **Linux:** Double-click `PHH_VPN_Client.desktop` or `PHH_VPN_Client.sh`
+
+See `LAUNCHER_INSTRUCTIONS.md` for detailed instructions on all platforms.
+
+**Option 2: Using run scripts:**
 ```bash
+# Linux/macOS
 ./run.sh
-```
 
-**Windows:**
-```cmd
+# Windows
 run.bat
 ```
 
-**Option 2: Manual activation:**
-
-**Linux/macOS:**
+**Manual activation:**
 ```bash
-# Activate virtual environment
+# Linux/macOS
 source venv/bin/activate
-
-# Run the app
 python3 vpn_app.py
-
-# When done, deactivate
 deactivate
-```
 
-**Windows:**
-```cmd
-REM Activate virtual environment
+# Windows
 venv\Scripts\activate.bat
-
-REM Run the app
 python vpn_app.py
-
-REM When done, deactivate
 deactivate
-```
-
-**Option 3: Without virtual environment (not recommended):**
-
-**Linux/macOS:**
-```bash
-python3 vpn_app.py
-```
-
-**Windows:**
-```cmd
-python vpn_app.py
 ```
 
 ### Using the GUI
@@ -233,7 +192,7 @@ python vpn_app.py
 
 4. **Connect**: Click the "Connect" button to enable the proxy. The application will configure your system's proxy settings automatically.
 
-5. **Setup System VPN (Linux only)**: Click "Setup System VPN" button to configure system-wide proxy:
+5. **Setup System VPN** (Linux only): Click "Setup System VPN" button to configure system-wide proxy:
    - Exports environment variables to ~/.bashrc, ~/.zshrc, ~/.profile
    - Configures proxychains for terminal applications
    - Configures NetworkManager for system-wide proxy
@@ -275,17 +234,112 @@ The application configures system-level proxy settings based on your operating s
 ## Troubleshooting
 
 ### Linux - "gsettings command not found"
+
 - Install GNOME settings: `sudo apt-get install gnome-settings-daemon`
 - Or use KDE configuration if you're on KDE
 - The app will fall back to environment variables if GUI tools aren't available
 
+### macOS - Tkinter Crash / "Tcl_Panic" Error
+
+**If you see a crash report mentioning `Tcl_Panic` or `TkpInit`:**
+
+This is a common issue on macOS when using the system Python from CommandLineTools, which has broken Tkinter support.
+
+**Quick Fix (Recommended):**
+```bash
+./fix_macos_tkinter.sh
+```
+
+This script will:
+- Check for Homebrew Python (install if needed)
+- Test Tkinter functionality
+- Recreate the virtual environment with working Python
+- Install dependencies
+
+**Manual Fix:**
+
+1. Install Python via Homebrew:
+   ```bash
+   brew install python@3.12
+   # Or: brew install python@3.11
+   ```
+
+2. Recreate the virtual environment:
+   ```bash
+   rm -rf venv
+   ./setup_venv.sh
+   ```
+
+3. Run the app:
+   ```bash
+   ./run.sh
+   ```
+
+The updated scripts automatically detect and use Homebrew Python if available, which has proper Tkinter support.
+
+**Why this happens:**
+- macOS CommandLineTools Python uses an outdated/broken Tcl/Tk framework
+- Homebrew Python includes properly compiled Tcl/Tk that works with modern macOS
+- The run script automatically prefers Homebrew Python on macOS
+
+### macOS - Proxy Connection Not Working
+
+**If the proxy shows as connected but websites don't work:**
+
+1. **Check System Proxy Settings:**
+   - Go to System Preferences > Network
+   - Select your active network (Wi-Fi or Ethernet)
+   - Click "Advanced" > "Proxies" tab
+   - Verify that the proxy is enabled and configured correctly
+   - If not configured, the app may need administrator privileges
+
+2. **Administrator Privileges:**
+   - The `networksetup` command requires admin privileges
+   - If you see errors in the Activity Log about networksetup failing, you may need to:
+     - Run the app with sudo (not recommended for GUI apps)
+     - Or manually configure proxy in System Preferences
+
+3. **Browser Settings:**
+   - **Safari**: Should use system proxy automatically
+   - **Chrome/Edge**: Should use system proxy, but check Settings > Advanced > System > Open proxy settings
+   - **Firefox**: Go to Settings > Network Settings > Settings > Use system proxy settings
+
+4. **Terminal Applications:**
+   - Environment variables are set automatically
+   - Test with: `curl --proxy http://YOUR_PROXY_IP:PORT ifconfig.me`
+   - Or: `export http_proxy=http://YOUR_PROXY_IP:PORT && curl ifconfig.me`
+
+5. **Verify Proxy is Active:**
+   ```bash
+   # Check current proxy settings
+   networksetup -getwebproxy Wi-Fi
+   networksetup -getsecurewebproxy Wi-Fi
+   networksetup -getsocksfirewallproxy Wi-Fi
+   ```
+
+6. **Manual Configuration:**
+   If automatic configuration fails, manually set proxy:
+   ```bash
+   # For HTTP/HTTPS proxy
+   sudo networksetup -setwebproxy Wi-Fi YOUR_PROXY_IP PORT
+   sudo networksetup -setsecurewebproxy Wi-Fi YOUR_PROXY_IP PORT
+   sudo networksetup -setwebproxystate Wi-Fi on
+   sudo networksetup -setsecurewebproxystate Wi-Fi on
+   
+   # For SOCKS proxy
+   sudo networksetup -setsocksfirewallproxy Wi-Fi YOUR_PROXY_IP PORT
+   sudo networksetup -setsocksfirewallproxystate Wi-Fi on
+   ```
+
 ### macOS - "networksetup: command not found"
+
 - This command should be available by default. If not, check your PATH.
 
 ### Windows - Registry access denied
+
 - Run the application as Administrator if you encounter permission issues
 
-### Connection issues
+### Connection Issues
 
 **Proxy shows connected but websites don't work:**
 
@@ -305,6 +359,7 @@ The application configures system-level proxy settings based on your operating s
 7. **Check firewall** - Ensure firewall allows connections to the proxy server
 
 **Terminal applications not using proxy:**
+
 1. **After connecting and clicking "Setup System VPN"**:
    - Open a **new terminal window**
    - Run: `source ~/.bashrc` (or `source ~/.zshrc` if using zsh)

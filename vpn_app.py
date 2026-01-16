@@ -16,6 +16,14 @@ import socket
 import urllib.request
 import urllib.error
 
+# Try to load .env file if python-dotenv is available
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # Load .env file if it exists
+except ImportError:
+    # python-dotenv not installed, skip .env loading
+    pass
+
 class VPNApp:
     def __init__(self, root):
         self.root = root
@@ -28,9 +36,9 @@ class VPNApp:
         self.os_type = platform.system()
         self.original_proxy_settings = {}
         
-        # Get proxy settings from environment
-        self.proxy_ip = os.getenv('PROXY_IP', '')
-        self.proxy_port = os.getenv('PROXY_PORT', '')
+        # Get proxy settings from environment (with defaults)
+        self.proxy_ip = os.getenv('PROXY_IP', '172.33.157.252')
+        self.proxy_port = os.getenv('PROXY_PORT', '8118')
         
         # Create GUI
         self.create_gui()
@@ -146,21 +154,17 @@ class VPNApp:
         
     def load_env_vars(self):
         """Load proxy settings from environment variables"""
-        self.proxy_ip = os.getenv('PROXY_IP', '')
-        self.proxy_port = os.getenv('PROXY_PORT', '')
+        self.proxy_ip = os.getenv('PROXY_IP', '172.33.157.252')
+        self.proxy_port = os.getenv('PROXY_PORT', '8118')
         
-        if self.proxy_ip:
-            self.ip_entry.delete(0, tk.END)
-            self.ip_entry.insert(0, self.proxy_ip)
+        # Always populate the fields with defaults or environment values
+        self.ip_entry.delete(0, tk.END)
+        self.ip_entry.insert(0, self.proxy_ip)
         
-        if self.proxy_port:
-            self.port_entry.delete(0, tk.END)
-            self.port_entry.insert(0, self.proxy_port)
+        self.port_entry.delete(0, tk.END)
+        self.port_entry.insert(0, self.proxy_port)
             
-        if self.proxy_ip and self.proxy_port:
-            self.log(f"Loaded from environment: {self.proxy_ip}:{self.proxy_port}")
-        else:
-            self.log("Environment variables PROXY_IP and PROXY_PORT not set")
+        self.log(f"Loaded proxy settings: {self.proxy_ip}:{self.proxy_port}")
             
     def get_proxy_settings(self):
         """Get proxy settings from GUI"""
@@ -629,41 +633,109 @@ export all_proxy="{proxy_url}"
                 os.environ['all_proxy'] = f'socks5://{ip}:{port}'
             self.log("Environment variables set for macOS")
             
-            # Get the first network service
+            # Get network services and find the active one
             result = subprocess.run(['networksetup', '-listallnetworkservices'], 
                                   capture_output=True, text=True, timeout=5, check=True)
-            services = [line for line in result.stdout.split('\n') 
-                       if line and not line.startswith('*')]
+            all_services = [line.strip() for line in result.stdout.split('\n') 
+                           if line.strip() and not line.strip().startswith('An asterisk')]
             
-            if not services:
+            # Get network service order to find active service
+            order_result = subprocess.run(['networksetup', '-listnetworkserviceorder'], 
+                                        capture_output=True, text=True, timeout=5, check=False)
+            
+            # Prefer Wi-Fi or Ethernet (active services)
+            service = None
+            preferred_services = ['Wi-Fi', 'Ethernet', 'AirPort', 'en0', 'en1']
+            
+            if order_result.returncode == 0:
+                # Parse service order to find active service
+                for line in order_result.stdout.split('\n'):
+                    for preferred in preferred_services:
+                        if preferred in line and '(' in line:
+                            # Extract service name from line like "(3) Wi-Fi"
+                            service_name = line.split(')')[1].split('(')[0].strip()
+                            if service_name in all_services:
+                                service = service_name
+                                break
+                    if service:
+                        break
+            
+            # Fallback: use first available service that's not a VPN or proxy
+            if not service:
+                for svc in all_services:
+                    # Skip VPN services and proxy services
+                    if svc.lower() not in ['proxy', 'vpn', 'xvpn', 'vpnify', 'speedtop']:
+                        service = svc
+                        break
+            
+            # Last resort: use first service
+            if not service and all_services:
+                service = all_services[0]
+            
+            if not service:
                 self.log("Warning: No network services found, using environment variables only")
                 return True
+            
+            self.log(f"Using network service: {service}")
+            
+            # Configure proxy with better error handling
+            try:
+                if proxy_type == "HTTP/HTTPS":
+                    # Enable auto proxy discovery
+                    subprocess.run(['networksetup', '-setproxyautodiscovery', service, 'on'], 
+                                 capture_output=True, text=True, timeout=5, check=False)
+                    self.log("Auto proxy discovery enabled")
+                    
+                    # Set HTTP proxy
+                    result = subprocess.run(['networksetup', '-setwebproxy', service, ip, str(port)], 
+                                         capture_output=True, text=True, timeout=5, check=True)
+                    self.log(f"HTTP proxy set: {ip}:{port}")
+                    
+                    # Set HTTPS proxy
+                    result = subprocess.run(['networksetup', '-setsecurewebproxy', service, ip, str(port)], 
+                                         capture_output=True, text=True, timeout=5, check=True)
+                    self.log(f"HTTPS proxy set: {ip}:{port}")
+                    
+                    # Enable HTTP proxy
+                    subprocess.run(['networksetup', '-setwebproxystate', service, 'on'], 
+                                 capture_output=True, text=True, timeout=5, check=True)
+                    self.log("Web proxy (HTTP) enabled")
+                    
+                    # Enable HTTPS proxy
+                    subprocess.run(['networksetup', '-setsecurewebproxystate', service, 'on'], 
+                                 capture_output=True, text=True, timeout=5, check=True)
+                    self.log("Secure web proxy (HTTPS) enabled")
+                    
+                elif proxy_type in ["SOCKS4", "SOCKS5"]:
+                    # Set SOCKS proxy
+                    result = subprocess.run(['networksetup', '-setsocksfirewallproxy', service, ip, str(port)], 
+                                         capture_output=True, text=True, timeout=5, check=True)
+                    self.log(f"SOCKS proxy set: {ip}:{port}")
+                    
+                    subprocess.run(['networksetup', '-setsocksfirewallproxystate', service, 'on'], 
+                                 capture_output=True, text=True, timeout=5, check=True)
+                    self.log("SOCKS proxy enabled")
                 
-            service = services[0]
-            
-            if proxy_type == "HTTP/HTTPS":
-                # Set HTTP proxy
-                subprocess.run(['networksetup', '-setwebproxy', service, ip, str(port)], 
-                             check=True, timeout=5)
-                # Set HTTPS proxy
-                subprocess.run(['networksetup', '-setsecurewebproxy', service, ip, str(port)], 
-                             check=True, timeout=5)
-                # Enable proxy
-                subprocess.run(['networksetup', '-setwebproxystate', service, 'on'], 
-                             check=True, timeout=5)
-                subprocess.run(['networksetup', '-setsecurewebproxystate', service, 'on'], 
-                             check=True, timeout=5)
-            elif proxy_type in ["SOCKS4", "SOCKS5"]:
-                # Set SOCKS proxy
-                subprocess.run(['networksetup', '-setsocksfirewallproxy', service, ip, str(port)], 
-                             check=True, timeout=5)
-                subprocess.run(['networksetup', '-setsocksfirewallproxystate', service, 'on'], 
-                             check=True, timeout=5)
-            
-            self.log(f"macOS proxy settings configured for service: {service} ({proxy_type})")
-            return True
+                # Verify proxy is set
+                if proxy_type == "HTTP/HTTPS":
+                    verify_result = subprocess.run(['networksetup', '-getwebproxy', service], 
+                                                   capture_output=True, text=True, timeout=5, check=False)
+                    if verify_result.returncode == 0:
+                        self.log(f"Proxy verification: {verify_result.stdout.strip()}")
+                
+                self.log(f"✓ macOS proxy settings configured for service: {service} ({proxy_type})")
+                return True
+                
+            except subprocess.CalledProcessError as e:
+                error_msg = e.stderr.decode() if e.stderr else str(e)
+                self.log(f"⚠ Error configuring macOS proxy via networksetup: {error_msg}")
+                self.log("This may require administrator privileges.")
+                self.log("Proxy environment variables are still set and will work for terminal apps.")
+                self.log("For system-wide proxy, you may need to run with sudo or configure manually.")
+                return True  # Still return True as env vars are set
         except subprocess.CalledProcessError as e:
-            self.log(f"Error configuring macOS proxy (networksetup failed): {e}")
+            error_msg = e.stderr.decode() if e.stderr else str(e)
+            self.log(f"⚠ Error getting network services: {error_msg}")
             self.log("Using environment variables only")
             return True  # Still return True as env vars are set
         except FileNotFoundError:
@@ -671,7 +743,8 @@ export all_proxy="{proxy_url}"
             return True  # Still return True as env vars are set
         except Exception as e:
             self.log(f"Error configuring macOS proxy: {e}")
-            return False
+            self.log("Environment variables are still set and will work for terminal apps.")
+            return True  # Return True as env vars are still useful
             
     def remove_proxy_linux(self):
         """Remove proxy configuration for Linux"""
@@ -788,26 +861,61 @@ export all_proxy="{proxy_url}"
         self.log("Environment proxy variables removed")
         
         try:
+            # Get network services
             result = subprocess.run(['networksetup', '-listallnetworkservices'], 
                                   capture_output=True, text=True, timeout=5, check=True)
-            services = [line for line in result.stdout.split('\n') 
-                       if line and not line.startswith('*')]
+            all_services = [line.strip() for line in result.stdout.split('\n') 
+                           if line.strip() and not line.strip().startswith('An asterisk')]
             
-            if not services:
+            # Get network service order to find active service
+            order_result = subprocess.run(['networksetup', '-listnetworkserviceorder'], 
+                                        capture_output=True, text=True, timeout=5, check=False)
+            
+            # Prefer Wi-Fi or Ethernet (active services)
+            service = None
+            preferred_services = ['Wi-Fi', 'Ethernet', 'AirPort', 'en0', 'en1']
+            
+            if order_result.returncode == 0:
+                for line in order_result.stdout.split('\n'):
+                    for preferred in preferred_services:
+                        if preferred in line and '(' in line:
+                            service_name = line.split(')')[1].split('(')[0].strip()
+                            if service_name in all_services:
+                                service = service_name
+                                break
+                    if service:
+                        break
+            
+            # Fallback: use first available service that's not a VPN or proxy
+            if not service:
+                for svc in all_services:
+                    if svc.lower() not in ['proxy', 'vpn', 'xvpn', 'vpnify', 'speedtop']:
+                        service = svc
+                        break
+            
+            # Last resort: use first service
+            if not service and all_services:
+                service = all_services[0]
+            
+            if not service:
                 self.log("No network services found, environment variables cleared")
                 return True
-                
-            service = services[0]
             
-            # Disable all proxy types
+            self.log(f"Disabling proxy for service: {service}")
+            
+            # Disable auto proxy discovery
+            subprocess.run(['networksetup', '-setproxyautodiscovery', service, 'off'], 
+                         capture_output=True, text=True, timeout=5, check=False)
+            
+            # Disable all proxy types (ignore errors if already disabled)
             subprocess.run(['networksetup', '-setwebproxystate', service, 'off'], 
-                         check=True, timeout=5)
+                         capture_output=True, text=True, timeout=5, check=False)
             subprocess.run(['networksetup', '-setsecurewebproxystate', service, 'off'], 
-                         check=True, timeout=5)
+                         capture_output=True, text=True, timeout=5, check=False)
             subprocess.run(['networksetup', '-setsocksfirewallproxystate', service, 'off'], 
-                         check=True, timeout=5)
+                         capture_output=True, text=True, timeout=5, check=False)
             
-            self.log("macOS proxy disabled")
+            self.log("✓ macOS proxy disabled (auto discovery, HTTP, HTTPS, SOCKS)")
             return True
         except subprocess.CalledProcessError as e:
             self.log(f"Warning: Could not disable macOS proxy via networksetup: {e}")
@@ -818,7 +926,8 @@ export all_proxy="{proxy_url}"
             return True  # Still return True as env vars are cleared
         except Exception as e:
             self.log(f"Error removing macOS proxy: {e}")
-            return False
+            self.log("Environment variables cleared")
+            return True  # Still return True as env vars are cleared
             
     def test_connection(self):
         """Test proxy connection"""
@@ -931,9 +1040,12 @@ export all_proxy="{proxy_url}"
                 else:  # macOS
                     success_msg = (f"Connected to proxy: {ip}:{port}\n\n"
                                   f"⚠ IMPORTANT:\n"
-                                  f"1. Restart your web browser completely\n"
+                                  f"1. Restart your web browser completely (close ALL windows)\n"
                                   f"2. Use 'Test Connection' to verify it's working\n"
-                                  f"3. Environment variables are set for terminal apps")
+                                  f"3. Environment variables are set for terminal apps\n"
+                                  f"4. If system proxy didn't configure, you may need admin privileges\n"
+                                  f"5. Check System Preferences > Network > Advanced > Proxies\n"
+                                  f"6. Terminal apps can use: curl --proxy http://{ip}:{port} ifconfig.me")
                 
                 messagebox.showinfo("Success", success_msg)
             else:
