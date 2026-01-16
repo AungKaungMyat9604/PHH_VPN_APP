@@ -10,39 +10,102 @@ A cross-platform VPN/Proxy client application that allows you to connect through
 - ✅ Manual proxy IP/Port input
 - ✅ Multiple proxy types: HTTP/HTTPS, SOCKS4, SOCKS5
 - ✅ Connection testing feature
-- ✅ Chrome launcher for Linux (launches Chrome with proxy settings)
+- ✅ **System-wide VPN setup** - Configures proxy for all applications including terminal
+- ✅ **Proxychains integration** - Terminal apps can use proxy via proxychains
+- ✅ **Shell config export** - Automatically exports proxy settings to .bashrc/.zshrc
+- ✅ **NetworkManager integration** - System-wide proxy via NetworkManager
 - ✅ Real-time connection status
 - ✅ Activity logging
 - ✅ Automatic proxy configuration for your operating system
-- ✅ Environment variables set for all applications (Chrome, curl, wget, etc.)
+- ✅ Environment variables set for all applications (curl, wget, git, etc.)
 
 ## Requirements
 
 - Python 3.7 or higher
 - tkinter (usually comes with Python, but may need to be installed separately on Linux)
+- python3-venv (for virtual environment setup on Linux)
+
+### Optional (for system-wide VPN on Linux):
+- proxychains4 (for terminal applications): `sudo apt-get install proxychains4`
+- NetworkManager (usually pre-installed on most Linux distributions)
+
+## Virtual Environment
+
+This project includes virtual environment support to keep dependencies isolated. The virtual environment is automatically created and managed by the setup scripts.
+
+**Benefits:**
+- Isolated Python environment
+- No conflicts with system Python packages
+- Easy to clean up (just delete the `venv/` folder)
+- Reproducible setup across different systems
 
 ## Installation
 
-### Linux
+### Quick Start with Virtual Environment (Recommended)
+
+**Linux/macOS:**
+```bash
+# Setup virtual environment and install dependencies
+./setup_venv.sh
+
+# Run the app (automatically activates venv)
+./run.sh
+```
+
+**Windows:**
+```cmd
+REM Setup virtual environment and install dependencies
+setup_venv.bat
+
+REM Run the app (automatically activates venv)
+run.bat
+```
+
+### Manual Installation
+
+#### Linux
 
 ```bash
 # Install tkinter if not already installed
-sudo apt-get install python3-tk  # Debian/Ubuntu
+sudo apt-get install python3-tk python3-venv  # Debian/Ubuntu
 # or
-sudo yum install python3-tkinter  # CentOS/RHEL
+sudo yum install python3-tkinter python3-venv  # CentOS/RHEL
 # or
-sudo pacman -S tk  # Arch Linux
+sudo pacman -S tk python-venv  # Arch Linux
+
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Install dependencies (optional)
+pip install -r requirements.txt
 ```
 
-### Windows
+#### Windows
 
 Python comes with tkinter by default. If you don't have Python, download it from [python.org](https://www.python.org/downloads/).
 
-### macOS
+```cmd
+REM Create virtual environment
+python -m venv venv
+venv\Scripts\activate.bat
+
+REM Install dependencies (optional)
+pip install -r requirements.txt
+```
+
+#### macOS
 
 Python and tkinter should be pre-installed. If not, install Python using Homebrew:
 ```bash
 brew install python3
+
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Install dependencies (optional)
+pip install -r requirements.txt
 ```
 
 ## Configuration
@@ -110,6 +173,46 @@ You can also enter the proxy IP and port directly in the application GUI.
 
 ### Running the Application
 
+**Option 1: Using the run scripts (Recommended - automatically handles venv):**
+
+**Linux/macOS:**
+```bash
+./run.sh
+```
+
+**Windows:**
+```cmd
+run.bat
+```
+
+**Option 2: Manual activation:**
+
+**Linux/macOS:**
+```bash
+# Activate virtual environment
+source venv/bin/activate
+
+# Run the app
+python3 vpn_app.py
+
+# When done, deactivate
+deactivate
+```
+
+**Windows:**
+```cmd
+REM Activate virtual environment
+venv\Scripts\activate.bat
+
+REM Run the app
+python vpn_app.py
+
+REM When done, deactivate
+deactivate
+```
+
+**Option 3: Without virtual environment (not recommended):**
+
 **Linux/macOS:**
 ```bash
 python3 vpn_app.py
@@ -118,12 +221,6 @@ python3 vpn_app.py
 **Windows:**
 ```cmd
 python vpn_app.py
-```
-
-Or make it executable:
-```bash
-chmod +x vpn_app.py
-./vpn_app.py
 ```
 
 ### Using the GUI
@@ -136,13 +233,30 @@ chmod +x vpn_app.py
 
 4. **Connect**: Click the "Connect" button to enable the proxy. The application will configure your system's proxy settings automatically.
 
-5. **Launch Chrome (Linux only)**: After connecting, click "Launch Chrome" button to launch Chrome with the proxy settings. This is the most reliable method for Chrome on Linux.
+5. **Setup System VPN (Linux only)**: Click "Setup System VPN" button to configure system-wide proxy:
+   - Exports environment variables to ~/.bashrc, ~/.zshrc, ~/.profile
+   - Configures proxychains for terminal applications
+   - Configures NetworkManager for system-wide proxy
+   - **After setup, open a new terminal and run: `source ~/.bashrc`**
 
-6. **Restart Browser**: **IMPORTANT** - If not using the Launch Chrome button, completely close and restart your web browser for the proxy to take effect.
+6. **Restart Browser**: **IMPORTANT** - Completely close and restart your web browser for the proxy to take effect.
 
-6. **Disconnect**: Click the "Disconnect" button to disable the proxy and restore your original network settings.
+7. **Test Terminal Apps**: 
+   - In a new terminal (after running `source ~/.bashrc`), test with:
+     ```bash
+     curl ifconfig.me
+     wget -qO- ifconfig.me
+     ```
+   - Or use proxychains for apps that don't respect environment variables:
+     ```bash
+     proxychains curl ifconfig.me
+     proxychains wget -qO- ifconfig.me
+     ```
+   - Run `./test_proxy.sh` to test all methods
 
-7. **Monitor**: Check the Activity Log for connection status and any messages.
+8. **Disconnect**: Click the "Disconnect" button to disable the proxy and restore your original network settings.
+
+9. **Monitor**: Check the Activity Log for connection status and any messages.
 
 ## How It Works
 
@@ -173,39 +287,52 @@ The application configures system-level proxy settings based on your operating s
 
 ### Connection issues
 
-**Proxy shows connected but websites don't work (especially Chrome on Linux):**
+**Proxy shows connected but websites don't work:**
 
-1. **Chrome on Linux/Debian** - Chrome doesn't always respect system proxy settings:
-   - **Option A (Recommended)**: Use the "Launch Chrome" button in the app after connecting
-   - **Option B**: Close ALL Chrome windows, then launch from terminal:
-     ```bash
-     google-chrome --proxy-server="172.33.157.252:8118"
-     ```
-   - **Option C**: Use the provided script:
-     ```bash
-     ./launch_chrome.sh 172.33.157.252 8118 http
-     ```
+1. **Restart your web browser** - Most browsers cache proxy settings and need a complete restart (close ALL windows)
 
-2. **Restart your web browser** - Most browsers cache proxy settings and need a complete restart (close ALL windows)
+2. **Check proxy type** - Try different proxy types (HTTP/HTTPS, SOCKS4, SOCKS5) using the dropdown. Port 8118 is typically HTTP.
 
-3. **Check proxy type** - Try different proxy types (HTTP/HTTPS, SOCKS4, SOCKS5) using the dropdown. Port 8118 is typically HTTP.
+3. **Use Test Connection** - Click "Test Connection" button to verify the proxy server is reachable
 
-4. **Use Test Connection** - Click "Test Connection" button to verify the proxy server is reachable
-
-5. **Browser proxy settings** - Some browsers (Firefox) may have their own proxy settings that override system settings
+4. **Browser proxy settings** - Some browsers (Firefox) may have their own proxy settings that override system settings
    - Firefox: Go to Settings > Network Settings > Settings > Use system proxy settings
 
-6. **Environment variables** - The app now sets environment variables that Chrome should respect. Launch Chrome from the same terminal where you ran the VPN app, or use the "Launch Chrome" button.
+5. **Environment variables** - The app sets environment variables that applications should respect. Make sure to restart your browser or open a new terminal after connecting.
 
-7. **Verify proxy server** - Make sure your proxy server is actually working and accessible
+6. **Verify proxy server** - Make sure your proxy server is actually working and accessible
 
-8. **Check firewall** - Ensure firewall allows connections to the proxy server
+7. **Check firewall** - Ensure firewall allows connections to the proxy server
+
+**Terminal applications not using proxy:**
+1. **After connecting and clicking "Setup System VPN"**:
+   - Open a **new terminal window**
+   - Run: `source ~/.bashrc` (or `source ~/.zshrc` if using zsh)
+   - Test with: `curl ifconfig.me`
+
+2. **Use proxychains for stubborn apps**:
+   ```bash
+   proxychains curl ifconfig.me
+   proxychains wget -qO- ifconfig.me
+   proxychains git clone <repo>
+   ```
+
+3. **Install proxychains if not installed**:
+   ```bash
+   sudo apt-get install proxychains4
+   ```
+
+4. **Run test script**:
+   ```bash
+   ./test_proxy.sh
+   ```
 
 **Other issues:**
 - Verify your proxy IP and port are correct
 - Check if the proxy server is running and accessible
 - Review the Activity Log in the application for detailed error messages
 - Some applications may not respect system proxy settings - they may need manual configuration
+- Make sure to open a NEW terminal after setting up system VPN (or run `source ~/.bashrc`)
 
 ## Security Notes
 

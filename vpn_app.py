@@ -109,11 +109,11 @@ class VPNApp:
                                   command=self.test_connection, width=20)
         self.test_btn.pack(side=tk.LEFT, padx=5)
         
-        # Chrome launcher button (Linux only)
+        # Setup system-wide proxy button (Linux only)
         if self.os_type == "Linux":
-            self.chrome_btn = ttk.Button(button_frame, text="Launch Chrome", 
-                                        command=self.launch_chrome, width=20)
-            self.chrome_btn.pack(side=tk.LEFT, padx=5)
+            self.setup_system_btn = ttk.Button(button_frame, text="Setup System VPN", 
+                                              command=self.setup_system_vpn, width=20)
+            self.setup_system_btn.pack(side=tk.LEFT, padx=5)
         
         # Log frame
         log_frame = ttk.LabelFrame(main_frame, text="Activity Log", padding="10")
@@ -311,14 +311,257 @@ class VPNApp:
                     # Environment variables already set above, so we're good
                     self.log("GUI-based proxy configuration not available. Using environment variables only.")
             
+            # Export to shell config files for persistence
+            self.export_env_to_shell(ip, port, proxy_type)
+            
+            # Configure proxychains if available
+            self.configure_proxychains(ip, port, proxy_type)
+            
+            # Configure NetworkManager proxy
+            self.configure_networkmanager(ip, port, proxy_type)
+            
             return True
         except Exception as e:
             self.log(f"Error configuring Linux proxy: {e}")
             return False
+    
+    def export_env_to_shell(self, ip, port, proxy_type):
+        """Export proxy environment variables to shell config files"""
+        try:
+            home = os.path.expanduser("~")
+            shell_configs = [
+                os.path.join(home, ".bashrc"),
+                os.path.join(home, ".zshrc"),
+                os.path.join(home, ".profile")
+            ]
+            
+            if proxy_type == "HTTP/HTTPS":
+                proxy_url = f"http://{ip}:{port}"
+            elif proxy_type == "SOCKS4":
+                proxy_url = f"socks4://{ip}:{port}"
+            elif proxy_type == "SOCKS5":
+                proxy_url = f"socks5://{ip}:{port}"
+            else:
+                proxy_url = f"http://{ip}:{port}"
+            
+            env_exports = f"""
+# PHH VPN Proxy Settings (Auto-generated)
+export HTTP_PROXY="{proxy_url}"
+export HTTPS_PROXY="{proxy_url}"
+export http_proxy="{proxy_url}"
+export https_proxy="{proxy_url}"
+export ALL_PROXY="{proxy_url}"
+export all_proxy="{proxy_url}"
+"""
+            
+            for config_file in shell_configs:
+                if os.path.exists(config_file):
+                    # Check if already exported
+                    with open(config_file, 'r') as f:
+                        content = f.read()
+                        if "PHH VPN Proxy Settings" in content:
+                            # Remove old settings
+                            lines = content.split('\n')
+                            new_lines = []
+                            skip = False
+                            for line in lines:
+                                if "PHH VPN Proxy Settings" in line:
+                                    skip = True
+                                elif skip and line.startswith("#") and "PHH VPN" not in line:
+                                    continue
+                                elif skip and line.startswith("export ") and ("PROXY" in line or "proxy" in line):
+                                    continue
+                                elif skip and line.strip() == "":
+                                    continue
+                                elif skip and not line.startswith("export "):
+                                    skip = False
+                                    new_lines.append(line)
+                                elif not skip:
+                                    new_lines.append(line)
+                            
+                            # Append new settings
+                            with open(config_file, 'w') as f:
+                                f.write('\n'.join(new_lines))
+                                f.write(env_exports)
+                            self.log(f"Updated proxy settings in {config_file}")
+                        else:
+                            # Append new settings
+                            with open(config_file, 'a') as f:
+                                f.write(env_exports)
+                            self.log(f"Added proxy settings to {config_file}")
+        except Exception as e:
+            self.log(f"Warning: Could not export to shell config: {e}")
+    
+    def configure_proxychains(self, ip, port, proxy_type):
+        """Configure proxychains for terminal applications"""
+        try:
+            proxychains_conf = "/etc/proxychains.conf"
+            user_proxychains_conf = os.path.expanduser("~/.proxychains/proxychains.conf")
+            
+            # Try user config first (no root needed)
+            config_file = None
+            if os.path.exists(os.path.dirname(user_proxychains_conf)):
+                config_file = user_proxychains_conf
+            elif os.path.exists(proxychains_conf):
+                # Check if we can write to /etc (requires root)
+                try:
+                    test_file = "/etc/.phh_vpn_test"
+                    with open(test_file, 'w') as f:
+                        f.write("test")
+                    os.remove(test_file)
+                    config_file = proxychains_conf
+                except:
+                    self.log("Cannot write to /etc/proxychains.conf (needs root). Using user config.")
+                    # Create user config directory
+                    user_dir = os.path.dirname(user_proxychains_conf)
+                    os.makedirs(user_dir, exist_ok=True)
+                    config_file = user_proxychains_conf
+            
+            if config_file:
+                # Determine proxy type for proxychains
+                if proxy_type == "HTTP/HTTPS":
+                    proxy_line = f"http {ip} {port}"
+                elif proxy_type == "SOCKS4":
+                    proxy_line = f"socks4 {ip} {port}"
+                elif proxy_type == "SOCKS5":
+                    proxy_line = f"socks5 {ip} {port}"
+                else:
+                    proxy_line = f"http {ip} {port}"
+                
+                # Read existing config
+                if os.path.exists(config_file):
+                    with open(config_file, 'r') as f:
+                        lines = f.readlines()
+                else:
+                    # Create default config
+                    lines = [
+                        "strict_chain\n",
+                        "proxy_dns\n",
+                        "remote_dns_subnet 224\n",
+                        "tcp_read_time_out 15000\n",
+                        "tcp_connect_time_out 8000\n",
+                        "[ProxyList]\n"
+                    ]
+                
+                # Remove old PHH VPN entries and add new one
+                new_lines = []
+                skip_old = False
+                for line in lines:
+                    if "# PHH VPN" in line:
+                        skip_old = True
+                        continue
+                    elif skip_old and line.strip().startswith(proxy_line.split()[0]):
+                        continue
+                    elif skip_old and line.strip() == "":
+                        skip_old = False
+                    elif not skip_old:
+                        new_lines.append(line)
+                
+                # Add new proxy entry
+                new_lines.append(f"# PHH VPN Proxy\n")
+                new_lines.append(f"{proxy_line}\n")
+                
+                with open(config_file, 'w') as f:
+                    f.writelines(new_lines)
+                
+                self.log(f"Proxychains configured: {config_file}")
+                self.log(f"Use 'proxychains <command>' to run apps through proxy")
+            else:
+                self.log("Proxychains not found. Install with: sudo apt-get install proxychains4")
+        except Exception as e:
+            self.log(f"Warning: Could not configure proxychains: {e}")
+    
+    def configure_networkmanager(self, ip, port, proxy_type):
+        """Configure NetworkManager proxy settings"""
+        try:
+            # Try to configure NetworkManager via nmcli
+            result = subprocess.run(['which', 'nmcli'], capture_output=True, timeout=2)
+            if result.returncode != 0:
+                self.log("NetworkManager (nmcli) not available")
+                return
+            
+            # Get active connection
+            result = subprocess.run(['nmcli', '-t', '-f', 'NAME,DEVICE', 'connection', 'show', '--active'], 
+                                  capture_output=True, text=True, timeout=5)
+            if result.returncode == 0 and result.stdout.strip():
+                connection_name = result.stdout.split('\n')[0].split(':')[0]
+                
+                if proxy_type == "HTTP/HTTPS":
+                    # Set proxy method
+                    subprocess.run(['nmcli', 'connection', 'modify', connection_name, 
+                                  'proxy.method', 'manual'], check=False, timeout=5)
+                    subprocess.run(['nmcli', 'connection', 'modify', connection_name, 
+                                  'proxy.http-proxy', f'{ip}:{port}'], check=False, timeout=5)
+                    subprocess.run(['nmcli', 'connection', 'modify', connection_name, 
+                                  'proxy.https-proxy', f'{ip}:{port}'], check=False, timeout=5)
+                    self.log(f"NetworkManager proxy configured for {connection_name}")
+                else:
+                    self.log("NetworkManager SOCKS proxy configuration not fully supported")
+        except Exception as e:
+            self.log(f"Warning: Could not configure NetworkManager: {e}")
+    
+    def setup_system_vpn(self):
+        """Setup system-wide VPN (export env vars and configure tools)"""
+        if not self.is_connected:
+            messagebox.showwarning("Not Connected", "Please connect to proxy first")
+            return
+        
+        try:
+            ip, port = self.get_proxy_settings()
+            proxy_type = self.proxy_type_var.get()
+            
+            self.log("Setting up system-wide VPN...")
+            
+            # Export to shell configs
+            self.export_env_to_shell(ip, port, proxy_type)
+            
+            # Configure proxychains
+            self.configure_proxychains(ip, port, proxy_type)
+            
+            # Configure NetworkManager
+            self.configure_networkmanager(ip, port, proxy_type)
+            
+            messagebox.showinfo("System VPN Setup", 
+                              f"System-wide VPN configured!\n\n"
+                              f"✓ Environment variables exported to shell configs\n"
+                              f"✓ Proxychains configured\n"
+                              f"✓ NetworkManager configured\n\n"
+                              f"To use in new terminals:\n"
+                              f"1. Open a new terminal\n"
+                              f"2. Run: source ~/.bashrc\n"
+                              f"3. Or use: proxychains <command>\n\n"
+                              f"Example: proxychains curl ifconfig.me")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to setup system VPN: {str(e)}")
+            self.log(f"System VPN setup error: {e}")
             
     def set_proxy_windows(self, ip, port, proxy_type="HTTP/HTTPS"):
         """Configure proxy for Windows"""
         try:
+            # Set environment variables for Windows applications
+            if proxy_type == "HTTP/HTTPS":
+                os.environ['HTTP_PROXY'] = f'http://{ip}:{port}'
+                os.environ['HTTPS_PROXY'] = f'http://{ip}:{port}'
+                os.environ['http_proxy'] = f'http://{ip}:{port}'
+                os.environ['https_proxy'] = f'http://{ip}:{port}'
+                os.environ['ALL_PROXY'] = f'http://{ip}:{port}'
+                os.environ['all_proxy'] = f'http://{ip}:{port}'
+            elif proxy_type == "SOCKS4":
+                os.environ['HTTP_PROXY'] = f'socks4://{ip}:{port}'
+                os.environ['HTTPS_PROXY'] = f'socks4://{ip}:{port}'
+                os.environ['http_proxy'] = f'socks4://{ip}:{port}'
+                os.environ['https_proxy'] = f'socks4://{ip}:{port}'
+                os.environ['ALL_PROXY'] = f'socks4://{ip}:{port}'
+                os.environ['all_proxy'] = f'socks4://{ip}:{port}'
+            elif proxy_type == "SOCKS5":
+                os.environ['HTTP_PROXY'] = f'socks5://{ip}:{port}'
+                os.environ['HTTPS_PROXY'] = f'socks5://{ip}:{port}'
+                os.environ['http_proxy'] = f'socks5://{ip}:{port}'
+                os.environ['https_proxy'] = f'socks5://{ip}:{port}'
+                os.environ['ALL_PROXY'] = f'socks5://{ip}:{port}'
+                os.environ['all_proxy'] = f'socks5://{ip}:{port}'
+            self.log("Environment variables set for Windows")
+            
             import winreg
             # Set proxy in registry
             key_path = r'Software\Microsoft\Windows\CurrentVersion\Internet Settings'
@@ -331,7 +574,7 @@ class VPNApp:
             if proxy_type == "HTTP/HTTPS":
                 winreg.SetValueEx(key, 'ProxyServer', 0, winreg.REG_SZ, f'{ip}:{port}')
             elif proxy_type in ["SOCKS4", "SOCKS5"]:
-                # Windows uses format: socks=ip:port
+                # Windows uses format: socks=ip:port for SOCKS
                 winreg.SetValueEx(key, 'ProxyServer', 0, winreg.REG_SZ, f'socks={ip}:{port}')
             
             # Disable proxy override for local addresses if needed
@@ -340,15 +583,21 @@ class VPNApp:
             winreg.CloseKey(key)
             
             # Notify system of changes
-            import ctypes
-            INTERNET_OPTION_REFRESH = 37
-            INTERNET_OPTION_SETTINGS_CHANGED = 39
-            internet_set_option = ctypes.windll.wininet.InternetSetOptionW
-            internet_set_option(0, INTERNET_OPTION_REFRESH, 0, 0)
-            internet_set_option(0, INTERNET_OPTION_SETTINGS_CHANGED, 0, 0)
+            try:
+                import ctypes
+                INTERNET_OPTION_REFRESH = 37
+                INTERNET_OPTION_SETTINGS_CHANGED = 39
+                internet_set_option = ctypes.windll.wininet.InternetSetOptionW
+                internet_set_option(0, INTERNET_OPTION_REFRESH, 0, 0)
+                internet_set_option(0, INTERNET_OPTION_SETTINGS_CHANGED, 0, 0)
+            except Exception as e:
+                self.log(f"Warning: Could not notify system of proxy changes: {e}")
             
             self.log(f"Windows proxy settings configured ({proxy_type})")
             return True
+        except ImportError:
+            self.log("Error: winreg module not available (this should not happen on Windows)")
+            return False
         except Exception as e:
             self.log(f"Error configuring Windows proxy: {e}")
             return False
@@ -356,6 +605,30 @@ class VPNApp:
     def set_proxy_macos(self, ip, port, proxy_type="HTTP/HTTPS"):
         """Configure proxy for macOS"""
         try:
+            # Set environment variables for macOS applications
+            if proxy_type == "HTTP/HTTPS":
+                os.environ['HTTP_PROXY'] = f'http://{ip}:{port}'
+                os.environ['HTTPS_PROXY'] = f'http://{ip}:{port}'
+                os.environ['http_proxy'] = f'http://{ip}:{port}'
+                os.environ['https_proxy'] = f'http://{ip}:{port}'
+                os.environ['ALL_PROXY'] = f'http://{ip}:{port}'
+                os.environ['all_proxy'] = f'http://{ip}:{port}'
+            elif proxy_type == "SOCKS4":
+                os.environ['HTTP_PROXY'] = f'socks4://{ip}:{port}'
+                os.environ['HTTPS_PROXY'] = f'socks4://{ip}:{port}'
+                os.environ['http_proxy'] = f'socks4://{ip}:{port}'
+                os.environ['https_proxy'] = f'socks4://{ip}:{port}'
+                os.environ['ALL_PROXY'] = f'socks4://{ip}:{port}'
+                os.environ['all_proxy'] = f'socks4://{ip}:{port}'
+            elif proxy_type == "SOCKS5":
+                os.environ['HTTP_PROXY'] = f'socks5://{ip}:{port}'
+                os.environ['HTTPS_PROXY'] = f'socks5://{ip}:{port}'
+                os.environ['http_proxy'] = f'socks5://{ip}:{port}'
+                os.environ['https_proxy'] = f'socks5://{ip}:{port}'
+                os.environ['ALL_PROXY'] = f'socks5://{ip}:{port}'
+                os.environ['all_proxy'] = f'socks5://{ip}:{port}'
+            self.log("Environment variables set for macOS")
+            
             # Get the first network service
             result = subprocess.run(['networksetup', '-listallnetworkservices'], 
                                   capture_output=True, text=True, timeout=5, check=True)
@@ -363,7 +636,8 @@ class VPNApp:
                        if line and not line.startswith('*')]
             
             if not services:
-                raise Exception("No network services found")
+                self.log("Warning: No network services found, using environment variables only")
+                return True
                 
             service = services[0]
             
@@ -388,6 +662,13 @@ class VPNApp:
             
             self.log(f"macOS proxy settings configured for service: {service} ({proxy_type})")
             return True
+        except subprocess.CalledProcessError as e:
+            self.log(f"Error configuring macOS proxy (networksetup failed): {e}")
+            self.log("Using environment variables only")
+            return True  # Still return True as env vars are set
+        except FileNotFoundError:
+            self.log("Warning: networksetup not found, using environment variables only")
+            return True  # Still return True as env vars are set
         except Exception as e:
             self.log(f"Error configuring macOS proxy: {e}")
             return False
@@ -400,6 +681,39 @@ class VPNApp:
         for var in env_vars:
             os.environ.pop(var, None)
         self.log("Environment proxy variables removed")
+        
+        # Remove from shell config files
+        try:
+            home = os.path.expanduser("~")
+            shell_configs = [
+                os.path.join(home, ".bashrc"),
+                os.path.join(home, ".zshrc"),
+                os.path.join(home, ".profile")
+            ]
+            
+            for config_file in shell_configs:
+                if os.path.exists(config_file):
+                    with open(config_file, 'r') as f:
+                        lines = f.readlines()
+                    
+                    new_lines = []
+                    skip = False
+                    for line in lines:
+                        if "PHH VPN Proxy Settings" in line:
+                            skip = True
+                        elif skip and (line.startswith("#") or line.startswith("export ") or line.strip() == ""):
+                            continue
+                        elif skip:
+                            skip = False
+                            new_lines.append(line)
+                        else:
+                            new_lines.append(line)
+                    
+                    with open(config_file, 'w') as f:
+                        f.writelines(new_lines)
+                    self.log(f"Removed proxy settings from {config_file}")
+        except Exception as e:
+            self.log(f"Warning: Could not clean shell configs: {e}")
         
         try:
             # Try GNOME
@@ -427,6 +741,13 @@ class VPNApp:
             
     def remove_proxy_windows(self):
         """Remove proxy configuration for Windows"""
+        # Remove environment variables
+        env_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 
+                   'ALL_PROXY', 'all_proxy', 'SOCKS_PROXY', 'socks_proxy']
+        for var in env_vars:
+            os.environ.pop(var, None)
+        self.log("Environment proxy variables removed")
+        
         try:
             import winreg
             key_path = r'Software\Microsoft\Windows\CurrentVersion\Internet Settings'
@@ -438,21 +759,34 @@ class VPNApp:
             winreg.CloseKey(key)
             
             # Notify system
-            import ctypes
-            INTERNET_OPTION_REFRESH = 37
-            INTERNET_OPTION_SETTINGS_CHANGED = 39
-            internet_set_option = ctypes.windll.wininet.InternetSetOptionW
-            internet_set_option(0, INTERNET_OPTION_REFRESH, 0, 0)
-            internet_set_option(0, INTERNET_OPTION_SETTINGS_CHANGED, 0, 0)
+            try:
+                import ctypes
+                INTERNET_OPTION_REFRESH = 37
+                INTERNET_OPTION_SETTINGS_CHANGED = 39
+                internet_set_option = ctypes.windll.wininet.InternetSetOptionW
+                internet_set_option(0, INTERNET_OPTION_REFRESH, 0, 0)
+                internet_set_option(0, INTERNET_OPTION_SETTINGS_CHANGED, 0, 0)
+            except Exception as e:
+                self.log(f"Warning: Could not notify system of proxy changes: {e}")
             
             self.log("Windows proxy disabled")
             return True
+        except ImportError:
+            self.log("Warning: winreg module not available (this should not happen on Windows)")
+            return True  # Still return True as env vars are cleared
         except Exception as e:
             self.log(f"Error removing Windows proxy: {e}")
             return False
             
     def remove_proxy_macos(self):
         """Remove proxy configuration for macOS"""
+        # Remove environment variables
+        env_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 
+                   'ALL_PROXY', 'all_proxy', 'SOCKS_PROXY', 'socks_proxy']
+        for var in env_vars:
+            os.environ.pop(var, None)
+        self.log("Environment proxy variables removed")
+        
         try:
             result = subprocess.run(['networksetup', '-listallnetworkservices'], 
                                   capture_output=True, text=True, timeout=5, check=True)
@@ -460,7 +794,8 @@ class VPNApp:
                        if line and not line.startswith('*')]
             
             if not services:
-                return False
+                self.log("No network services found, environment variables cleared")
+                return True
                 
             service = services[0]
             
@@ -474,66 +809,17 @@ class VPNApp:
             
             self.log("macOS proxy disabled")
             return True
+        except subprocess.CalledProcessError as e:
+            self.log(f"Warning: Could not disable macOS proxy via networksetup: {e}")
+            self.log("Environment variables cleared")
+            return True  # Still return True as env vars are cleared
+        except FileNotFoundError:
+            self.log("Warning: networksetup not found, environment variables cleared")
+            return True  # Still return True as env vars are cleared
         except Exception as e:
             self.log(f"Error removing macOS proxy: {e}")
             return False
             
-    def launch_chrome(self):
-        """Launch Chrome with proxy settings (Linux only)"""
-        if not self.is_connected:
-            messagebox.showwarning("Not Connected", "Please connect to proxy first")
-            return
-            
-        try:
-            ip, port = self.get_proxy_settings()
-            proxy_type = self.proxy_type_var.get()
-            
-            # Determine Chrome executable name
-            chrome_cmds = ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']
-            chrome_cmd = None
-            
-            for cmd in chrome_cmds:
-                try:
-                    result = subprocess.run(['which', cmd], capture_output=True, timeout=2)
-                    if result.returncode == 0:
-                        chrome_cmd = cmd
-                        break
-                except:
-                    continue
-            
-            if not chrome_cmd:
-                messagebox.showerror("Chrome Not Found", 
-                                   "Chrome/Chromium not found in PATH.\n"
-                                   "Please install Chrome or Chromium.")
-                return
-            
-            # Build proxy server string
-            if proxy_type == "HTTP/HTTPS":
-                proxy_server = f"{ip}:{port}"
-            elif proxy_type == "SOCKS4":
-                proxy_server = f"socks4://{ip}:{port}"
-            elif proxy_type == "SOCKS5":
-                proxy_server = f"socks5://{ip}:{port}"
-            else:
-                proxy_server = f"{ip}:{port}"
-            
-            # Launch Chrome with proxy
-            cmd = [chrome_cmd, f'--proxy-server={proxy_server}', '--new-window']
-            
-            self.log(f"Launching {chrome_cmd} with proxy: {proxy_server}")
-            
-            # Launch in background
-            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            
-            self.log(f"Chrome launched with proxy settings")
-            messagebox.showinfo("Chrome Launched", 
-                              f"Chrome launched with proxy:\n{proxy_server}\n\n"
-                              f"Check whatismyipaddress.com to verify it's working.")
-            
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to launch Chrome: {str(e)}")
-            self.log(f"Chrome launch error: {e}")
-    
     def test_connection(self):
         """Test proxy connection"""
         try:
@@ -629,25 +915,27 @@ class VPNApp:
                 self.disconnect_btn.config(state=tk.NORMAL)
                 self.log("Successfully connected to proxy")
                 
-                # Chrome-specific instructions for Linux
-                chrome_instructions = ""
+                # Platform-specific success message
                 if self.os_type == "Linux":
-                    chrome_instructions = (
-                        f"\n\nFor Chrome on Linux:\n"
-                        f"1. Close ALL Chrome windows completely\n"
-                        f"2. Launch Chrome from terminal with:\n"
-                        f"   google-chrome --proxy-server='{ip}:{port}'\n"
-                        f"   OR use the launch_chrome.sh script\n"
-                        f"3. Environment variables are set - new terminal apps will use proxy"
-                    )
-                
-                messagebox.showinfo("Success", 
-                                  f"Connected to proxy: {ip}:{port}\n\n"
+                    success_msg = (f"Connected to proxy: {ip}:{port}\n\n"
                                   f"⚠ IMPORTANT:\n"
                                   f"1. Restart your web browser completely\n"
-                                  f"2. On Linux, Chrome may need to be launched with proxy flag\n"
-                                  f"3. Use 'Test Connection' to verify it's working"
-                                  + chrome_instructions)
+                                  f"2. Use 'Test Connection' to verify it's working\n"
+                                  f"3. Click 'Setup System VPN' for system-wide proxy")
+                elif self.os_type == "Windows":
+                    success_msg = (f"Connected to proxy: {ip}:{port}\n\n"
+                                  f"⚠ IMPORTANT:\n"
+                                  f"1. Restart your web browser completely\n"
+                                  f"2. Use 'Test Connection' to verify it's working\n"
+                                  f"3. Environment variables are set for terminal apps")
+                else:  # macOS
+                    success_msg = (f"Connected to proxy: {ip}:{port}\n\n"
+                                  f"⚠ IMPORTANT:\n"
+                                  f"1. Restart your web browser completely\n"
+                                  f"2. Use 'Test Connection' to verify it's working\n"
+                                  f"3. Environment variables are set for terminal apps")
+                
+                messagebox.showinfo("Success", success_msg)
             else:
                 messagebox.showerror("Error", "Failed to configure proxy. Check the log for details.")
                 

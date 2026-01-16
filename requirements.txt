@@ -1,9 +1,12 @@
-# VPN App Requirements
-# Note: This app uses built-in Python libraries (tkinter, subprocess, etc.)
-# No external dependencies required for basic functionality
+# PHH VPN Client Requirements
+# 
+# Note: This app primarily uses built-in Python libraries (tkinter, subprocess, etc.)
+# No external dependencies are required for basic functionality.
+#
+# Optional dependencies:
 
-# Optional: For Windows registry operations (already built into Python)
-# pywin32  # Only needed if you want explicit Windows registry access, but winreg is built-in
-
-# Optional: For .env file support (if you want to use python-dotenv)
+# For .env file support (if you want to use .env files instead of environment variables)
 python-dotenv>=1.0.0
+
+# Note: Windows registry operations use built-in 'winreg' module
+# Note: All other functionality uses standard library modules
